@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "9774258051",
+    "firebase_url": "https://smart-lamp-52cb7-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "smart-lamp-52cb7",
+    "storage_bucket": "smart-lamp-52cb7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:9774258051:android:c11578d0163aa1624408b6",
+        "android_client_info": {
+          "package_name": "com.example.flutter_test_smart_home"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHHi_wRRCGd9zYrO5dTjXV78Go34kyu8o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
