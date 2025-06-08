@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/power_stats.dart';
 import '../models/schedule.dart';
@@ -14,33 +15,24 @@ class FirebaseService {
   final _scheduleRef = FirebaseDatabase.instance.ref('schedules');
   final _historyRef = FirebaseDatabase.instance.ref('history');
 
-  // ─── Lamp ────────────────────────────────────────────────
-
+  // Lamp
   Stream<bool> getLampStatusStream() {
     return _lampRef.child('isOn').onValue.map((event) {
       final data = event.snapshot.value;
-      print('Lamp stream snapshot: $data');
       return data == true;
     });
   }
 
   Future<void> setLampStatus(bool isOn) async {
-    print('Lamp status updated: $isOn');
     await _lampRef.update({'isOn': isOn});
     await addHistory('lamp', isOn);
   }
 
-  // ─── Fan (Dynamo) ────────────────────────────────────────
-
+  // Fan
   Stream<bool> getFanStatusStream() {
     return _fanRef.child('isOn').onValue.map((event) {
       return event.snapshot.value == true;
     });
-  }
-
-  Future<bool> getFanStatus() async {
-    final snapshot = await _fanRef.child('isOn').get();
-    return snapshot.value == true;
   }
 
   Future<void> setFanStatus(bool isOn) async {
@@ -48,47 +40,42 @@ class FirebaseService {
     await addHistory('fan', isOn);
   }
 
-  // ─── Power Stats ─────────────────────────────────────────
-
+  // Power Stats
   Stream<List<PowerStats>> getPowerStatsStream() {
-    return _powerStatsRef.onValue.map((event) {
+    final ref = FirebaseDatabase.instance.ref('powerStats');
+    return ref.onValue.map((event) {
       final data = event.snapshot.value as Map<dynamic, dynamic>? ?? {};
-      final stats = data.entries.map((e) {
-        return PowerStats.fromMap(e.value);
-      }).toList();
-      stats.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      return stats;
-    });
-  }
 
-  Future<void> addDummyStat() async {
-    final ref = _powerStatsRef.push();
-    final value = double.parse(
-      (1 + (3 * (0.5 - (DateTime.now().second % 10) / 10))).toStringAsFixed(2),
-    );
-    await ref.set({
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'value': value,
-    });
-  }
-
-  // ─── Schedule ─────────────────────────────────────────────
-
-  Stream<List<Schedule>> getWeeklySchedule() {
-    return _scheduleRef.onValue.map((event) {
-      final data = event.snapshot.value as Map<dynamic, dynamic>? ?? {};
-      return data.entries.map((e) {
-        return Schedule.fromMap(e.value);
+      return data.entries.map((entry) {
+        final map = Map<String, dynamic>.from(entry.value);
+        return PowerStats.fromMap(map);
       }).toList();
     });
   }
 
-  Future<void> setSchedule(Schedule schedule) async {
-    await _scheduleRef.child(schedule.id).set(schedule.toMap());
+  // Schedules
+  Future<List<ScheduleModel>> getSchedules() async {
+    final snapshot = await _scheduleRef.get();
+    final data = snapshot.value as Map<dynamic, dynamic>? ?? {};
+    return data.entries.map((e) {
+      return ScheduleModel.fromMap(e.value, e.key);
+    }).toList();
   }
 
-  // ─── History (Lamp & Fan) ────────────────────────────────
+  Future<void> addSchedule(ScheduleModel schedule) async {
+    final newRef = _scheduleRef.push();
+    await newRef.set(schedule.copyWith(id: newRef.key!).toMap());
+  }
 
+  Future<void> updateSchedule(ScheduleModel schedule) async {
+    await _scheduleRef.child(schedule.id).update(schedule.toMap());
+  }
+
+  Future<void> deleteSchedule(String id) async {
+    await _scheduleRef.child(id).remove();
+  }
+
+  // History
   Future<void> addHistory(String device, bool isOn) async {
     final ref = _historyRef.push();
     await ref.set({
@@ -105,5 +92,48 @@ class FirebaseService {
         return HistoryItem.fromMap(e.value);
       }).toList()..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     });
+  }
+
+  Future<void> clearAllHistory() async {
+    await _historyRef.remove();
+  }
+
+  // Auto Schedule Evaluator
+  void evaluateAutoSchedule() async {
+    final schedules = await getSchedules();
+    final now = DateTime.now();
+    final daysInEnglish = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final currentDay = daysInEnglish[now.weekday - 1];
+
+    for (var s in schedules) {
+      if (!s.enabled || s.day != currentDay) continue;
+
+      final nowMinutes = now.hour * 60 + now.minute;
+      final onTime = _parseTimeToMinutes(s.onTime);
+      final offTime = _parseTimeToMinutes(s.offTime);
+
+      final shouldBeOn = nowMinutes >= onTime && nowMinutes < offTime;
+
+      if (s.device == 'lamp') {
+        final current = (await _lampRef.child('isOn').get()).value == true;
+        if (current != shouldBeOn) await setLampStatus(shouldBeOn);
+      } else if (s.device == 'fan') {
+        final current = (await _fanRef.child('isOn').get()).value == true;
+        if (current != shouldBeOn) await setFanStatus(shouldBeOn);
+      }
+    }
+  }
+
+  int _parseTimeToMinutes(String time) {
+    final parts = time.split(':').map(int.parse).toList();
+    return parts[0] * 60 + parts[1];
   }
 }

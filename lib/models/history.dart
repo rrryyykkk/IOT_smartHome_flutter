@@ -11,9 +11,9 @@ class HistoryItem {
 
   factory HistoryItem.fromMap(Map<dynamic, dynamic> map) {
     return HistoryItem(
-      device: map['device'],
-      status: map['status'],
-      timestamp: map['timestamp'],
+      device: map['device'] ?? '',
+      status: map['status'] ?? false,
+      timestamp: map['timestamp'] ?? 0,
     );
   }
 }

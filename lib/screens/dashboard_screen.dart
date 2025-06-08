@@ -1,22 +1,56 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart'; // ⬅️ Penting untuk format tanggal
+
 import '../services/auth_services.dart';
 import '../services/firebase_services.dart';
 import '../widget/lamp_toggle.dart';
-import '../widget/fan_toggle.dart'; // ← Tambahkan ini
-import '../widget/stats_chart.dart';
-// import '../widgets/timer_control.dart';
+import '../widget/fan_toggle.dart';
+import '../widget/stats_list.dart';
 import '../widget/weekly_options.dart';
-import '../widget/lamp_history.dart';
+import '../widget/history.dart';
 import '../models/power_stats.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  late Timer _scheduleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Cek auto-schedule pertama kali
+    FirebaseService().evaluateAutoSchedule();
+
+    // Cek auto-schedule setiap 1 menit
+    _scheduleTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      FirebaseService().evaluateAutoSchedule();
+      print('Auto-schedule checked at ${DateTime.now()}');
+    });
+  }
+
+  @override
+  void dispose() {
+    _scheduleTimer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthService>(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Format tanggal hari ini
+    final todayFormatted = DateFormat.yMMMMEEEEd(
+      'id_ID',
+    ).format(DateTime.now());
 
     return Scaffold(
       appBar: AppBar(
@@ -36,10 +70,12 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Container(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: ListView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Selamat datang
             Text(
               "Hi 👋, Welcome back!",
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -47,94 +83,66 @@ class DashboardScreen extends StatelessWidget {
                 color: isDark ? Colors.white : const Color(0xFF2F80ED),
               ),
             ),
-            const SizedBox(height: 20),
-
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text("Add Dummy Stat"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2F80ED),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-              ),
-              onPressed: () {
-                FirebaseService().addDummyStat();
-              },
+            const SizedBox(height: 4),
+            // Tanggal hari ini
+            Text(
+              todayFormatted,
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
-
             const SizedBox(height: 20),
 
-            // 💡 Lamp Control + Timer
+            // Lamp Control
             _buildCard(
               title: "Lamp Control",
               icon: Icons.lightbulb_outline,
-              child: Column(
-                children: const [
-                  LampToggle(),
-                  SizedBox(height: 16),
-                  // TimerControlWidget(),
-                ],
-              ),
+              child: const SizedBox(height: 60, child: LampToggle()),
             ),
-
             const SizedBox(height: 24),
 
-            // 🌀 Fan (Dinamo) Control
+            // Fan Control
             _buildCard(
               title: "Fan Control",
               icon: Icons.toys,
-              child: const FanToggle(),
+              child: const SizedBox(height: 60, child: FanToggle()),
             ),
-
             const SizedBox(height: 24),
 
-            // ⚡ Power Usage Chart
+            // Power Usage
             _buildCard(
               title: "Power Usage",
               icon: Icons.bolt,
-              child: SizedBox(
-                height: 220,
-                child: StreamBuilder<List<PowerStats>>(
-                  stream: FirebaseService().getPowerStatsStream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      return const Center(child: Text('Error loading stats'));
-                    } else {
-                      final stats = snapshot.data ?? [];
-                      if (stats.isEmpty) {
-                        return const Center(child: Text('No stats available'));
-                      }
-                      return StatsChart(stats: stats);
+              child: StreamBuilder<List<PowerStats>>(
+                stream: FirebaseService().getPowerStatsStream(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (snapshot.hasError) {
+                    return const Center(child: Text('Error loading stats'));
+                  } else {
+                    final stats = snapshot.data ?? [];
+                    if (stats.isEmpty) {
+                      return const Center(child: Text('No stats available'));
                     }
-                  },
-                ),
+                    return StatsList(stats: stats);
+                  }
+                },
               ),
             ),
-
             const SizedBox(height: 24),
 
-            // 📅 Weekly Schedule
+            // Weekly Schedule
             _buildCard(
               title: "Weekly Schedule",
               icon: Icons.schedule,
-              child: const WeeklyScheduleWidget(),
+              child: WeeklyScheduleWidget(firebaseService: FirebaseService()),
             ),
-
             const SizedBox(height: 24),
 
-            // 🕓 Lamp History
+            // Device History
             _buildCard(
-              title: "Lamp History",
+              title: "Device History",
               icon: Icons.history,
-              child: const LampHistoryList(),
+              child: const SizedBox(height: 280, child: DeviceHistoryList()),
             ),
           ],
         ),
